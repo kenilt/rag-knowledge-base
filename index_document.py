@@ -38,8 +38,26 @@ mq = marqo.Client()
 # )
 # print(results)
 
-# results = mq.index("doodoo_base").delete()
-# print(results)
 
-# all_docs = mq.index("doodoo_base").search("", limit=1000)
-# print(all_docs)
+# def rag_query(user_query, top_k=3):
+#     # Retrieve relevant documents
+#     results = mq.index(BASE_NAME).search(user_query, limit=top_k)
+
+#     # Construct context from retrieved documents
+#     context = " ".join([result["content"] for result in results["hits"]])
+#     # paths = ", ".join([result["file_path"] for result in results["hits"]])
+
+#     # Prepare prompt for Gemma 3 4B
+#     prompt = f"Context: {context}\n\nQuestion: {user_query}\n\nAnswer:"
+#     print(prompt)
+
+#     # Generate response using Gemma 3 4B
+#     response = ollama_client.generate(model="gemma3:4b", prompt=prompt)
+
+#     return response["response"]
+
+
+# Example usage
+# query = "What is DooDoo?"
+# answer = rag_query(query)
+# print("===> Answer:", answer)
