@@ -3,6 +3,7 @@ from pydoc import text
 from dotenv import load_dotenv
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
+import google.generativeai as genai
 
 import threading
 import time
@@ -14,9 +15,15 @@ from common import BASE_NAME
 
 load_dotenv()
 
+# SlackApp
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 SLACK_APP_TOKEN = os.getenv("SLACK_APP_TOKEN")
 app = App(token=SLACK_BOT_TOKEN)
+
+# Gemini
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+genai.configure(api_key=GEMINI_API_KEY)
+
 
 mq = marqo.Client()
 ollama_client = Client()
@@ -42,7 +49,7 @@ def buffer_worker(request_id, update_response_func):
     message = "Thinking... 🤔"
 
     while not stop_flags[request_id]:
-        time.sleep(3)
+        time.sleep(2)
         if buffers[request_id]:
             if is_thinking:
                 is_thinking = False
@@ -55,7 +62,7 @@ def buffer_worker(request_id, update_response_func):
 def generate_ai_response(prompt, update_response_func):
     request_id = str(time.time())
 
-    # Retrieve relevant documents
+    # Retrieve relevant documents (Need to set up marqo first, and index some documents)
     results = mq.index(BASE_NAME).search(prompt, limit=10)
 
     # Construct context from retrieved documents
@@ -84,9 +91,7 @@ def generate_ai_response(prompt, update_response_func):
     )
     buffer_thread.start()
 
-    stream = ollama_client.generate(model="gemma3:4b", prompt=prompt, stream=True)
-    for chunk in stream:
-        buffers[request_id] += chunk["response"]  # Append response to buffer
+    generate_response_by_gemini(prompt, request_id)
 
     # Stop the buffer thread after the stream ends
     stop_flags[request_id] = True
@@ -100,6 +105,20 @@ def generate_ai_response(prompt, update_response_func):
     # Clean up the request from the dictionary
     del buffers[request_id]
     del stop_flags[request_id]
+
+
+def generate_response_by_gemma3(prompt, request_id):
+    # Need to set up ollama first, then pull some models
+    stream = ollama_client.generate(model="gemma3:4b", prompt=prompt, stream=True)
+    for chunk in stream:
+        buffers[request_id] += chunk["response"]  # Append response to buffer
+
+
+def generate_response_by_gemini(prompt, request_id):
+    model = genai.GenerativeModel("gemini-2.0-flash")
+    response_stream = model.generate_content(prompt, stream=True)
+    for chunk in response_stream:
+        buffers[request_id] += chunk.text  # Append response to buffer
 
 
 @app.event("message")
