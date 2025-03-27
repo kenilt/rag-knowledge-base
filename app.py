@@ -75,7 +75,7 @@ def buffer_worker(request_id, update_response_func):
     message = "Thinking... 🤔"
 
     while not stop_flags[request_id]:
-        time.sleep(2)
+        time.sleep(1)
         if buffers[request_id]:
             if is_thinking:
                 is_thinking = False
@@ -132,6 +132,7 @@ def generate_ai_response(prompt, update_response_func, trailing_response_func):
             update_response_func(chunks[0])
             for chunk in chunks[1:]:
                 trailing_response_func(chunk)
+        print(message)
 
     # Clean up the request from the dictionary
     del buffers[request_id]
