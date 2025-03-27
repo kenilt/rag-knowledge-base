@@ -24,6 +24,8 @@ app = App(token=SLACK_BOT_TOKEN)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 genai.configure(api_key=GEMINI_API_KEY)
 
+SLACK_MESSAGE_LIMIT = 3000
+
 
 mq = marqo.Client()
 ollama_client = Client()
@@ -42,6 +44,30 @@ def format_message(message):
     return message.replace("**", "*")
 
 
+def chunk_message(text: str):
+    if len(text) <= SLACK_MESSAGE_LIMIT:
+        return [text]
+
+    lines = text.split("\n")
+    chunks = []
+    current_chunk = ""
+
+    for line in lines:
+        if (
+            len(current_chunk) + len(line) + 1 <= SLACK_MESSAGE_LIMIT
+        ):  # +1 for the newline character
+            current_chunk += line + "\n"
+        else:
+            if current_chunk:
+                chunks.append(current_chunk.strip())  # Remove trailing newline
+            current_chunk = line + "\n"
+
+    if current_chunk:
+        chunks.append(current_chunk.strip())
+
+    return chunks
+
+
 def buffer_worker(request_id, update_response_func):
     """Prints the buffer for a specific request every 3 seconds."""
     global buffers, stop_flags
@@ -56,10 +82,12 @@ def buffer_worker(request_id, update_response_func):
             message = format_message(buffers[request_id]) + "..."
         elif is_thinking:
             message += "🤔"
-        update_response_func(message)
+
+        if len(message) < SLACK_MESSAGE_LIMIT:
+            update_response_func(message)
 
 
-def generate_ai_response(prompt, update_response_func):
+def generate_ai_response(prompt, update_response_func, trailing_response_func):
     request_id = str(time.time())
 
     # Retrieve relevant documents (Need to set up marqo first, and index some documents)
@@ -99,8 +127,11 @@ def generate_ai_response(prompt, update_response_func):
 
     if buffers[request_id]:
         message = format_message(buffers[request_id]) + f"\n\n*References:*\n{paths}"
-        update_response_func(message)
-        print(message)
+        chunks = chunk_message(message)
+        if len(chunks) >= 1:
+            update_response_func(chunks[0])
+            for chunk in chunks[1:]:
+                trailing_response_func(chunk)
 
     # Clean up the request from the dictionary
     del buffers[request_id]
@@ -143,7 +174,10 @@ def handle_message(event, say, client: WebClient):
             text=message,
         )
 
-    generate_ai_response(user_message, update_response_func)
+    def trailing_response_func(message):
+        client.chat_postMessage(channel=event["channel"], text=message)
+
+    generate_ai_response(user_message, update_response_func, trailing_response_func)
 
 
 if __name__ == "__main__":
