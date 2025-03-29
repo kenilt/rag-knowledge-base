@@ -73,7 +73,7 @@ def summarize_conversation(history):
         return None
 
 
-def check_token_limit(history):
+def is_reach_token_limit(history):
     total_tokens = 0
     for message in history:
         total_tokens += len(message["text"].split())
@@ -85,7 +85,7 @@ def check_token_limit(history):
 def build_prompt(history, context, current_message):
     prompt = "Conversation History:\n"
     for message in history:
-        prompt += f"{message['user']}: {message['text']}\n"
+        prompt += f"{message['role']}: {message['text']}\n"
     if context:
         prompt += "\nRetrieved Context:\n"
         prompt += context
@@ -150,31 +150,8 @@ def generate_ai_response(
 ):
     request_id = str(time.time())
 
-    # Retrieve relevant documents (Need to set up marqo first, and index some documents)
-    results = mq.index(BASE_NAME).search(question, limit=10)
-
-    # Construct context from retrieved documents
-    context = " ".join(
-        [
-            result["content"]
-            for result in results["hits"]
-            if (result["file_type"] in ["txt", "pptx", "pdf", "docx"])
-        ][0:3]
-    )
-    paths = "\n".join(
-        distinct_paths(
-            [f"<https://example.com|{result["title"]}>" for result in results["hits"]]
-        )
-    )
-
-    # Update last activity timestamp
-    last_activity[conversation_key] = time.time()
-
-    # Check if conversation history exists, if not create it
-    if conversation_key not in conversation_histories:
-        conversation_histories[conversation_key] = []
-
-    history: list = conversation_histories[conversation_key]
+    context, paths = retrieve_context_and_paths(question)
+    history: list = get_conversation_history(conversation_key)
 
     # Prepare prompt with retrieved context
     prompt = build_prompt(history, context, question)
@@ -189,7 +166,7 @@ def generate_ai_response(
     )
     buffer_thread.start()
 
-    generate_response_by_gemini(prompt, conversation_key, request_id)
+    generate_response_by_gemini(prompt, request_id)
 
     # Stop the buffer thread after the stream ends
     stop_flags[request_id] = True
@@ -204,37 +181,74 @@ def generate_ai_response(
                 trailing_response_func(chunk)
         print(message)
 
-    history.append({"user": "user", "text": question})
-    history.append({"user": "bot", "text": buffers[request_id]})
-
-    if check_token_limit(history):
-        summary = summarize_conversation(history)
-        if summary:
-            conversation_histories[conversation_key] = [
-                {
-                    "user": "bot",
-                    "text": f"Conversation summarized. Continuing from summary:\n{summary}",
-                }
-            ]
-            print(f"Conversation summarized. Continuing from summary:\n{summary}")
-        else:
-            print(
-                "Token limit reached, but summarization failed. Continuing without summary."
-            )
+    track_converstion_history(history, question, buffers[request_id])
 
     # Clean up the request from the dictionary
     del buffers[request_id]
     del stop_flags[request_id]
 
+    summarize_history_if_needed(history, conversation_key)
 
-def generate_response_by_gemma3(prompt, conversation_key, request_id):
+
+def retrieve_context_and_paths(question):
+    """Retrieve relevant documents and construct context and paths."""
+    results = mq.index(BASE_NAME).search(question, limit=10)
+    context = " ".join(
+        [
+            result["content"]
+            for result in results["hits"]
+            if result["file_type"] in ["txt", "pptx", "pdf", "docx"]
+        ][0:3]
+    )
+    paths = "\n".join(
+        distinct_paths(
+            [f"<https://example.com|{result['title']}>" for result in results["hits"]]
+        )
+    )
+    return context, paths
+
+
+def get_conversation_history(conversation_key):
+    """Initialize or retrieve the conversation history for a given key."""
+    if conversation_key not in conversation_histories:
+        conversation_histories[conversation_key] = []
+    return conversation_histories[conversation_key]
+
+
+def track_converstion_history(history: list, question, answer):
+    history.append({"role": "User", "text": question})
+    history.append({"role": "Bot", "text": answer})
+    # Basic token management (limit to last 10 messages)
+    if len(history) > 20:
+        history = history[-20:]
+
+
+def summarize_history_if_needed(history, conversation_key):
+    if not is_reach_token_limit(history):
+        return
+    summary = summarize_conversation(history)
+    if summary:
+        conversation_histories[conversation_key] = [
+            {
+                "user": "Bot",
+                "text": f"Conversation summarized. Continuing from summary:\n{summary}",
+            }
+        ]
+        print(f"Conversation summarized. Continuing from summary:\n{summary}")
+    else:
+        print(
+            "Token limit reached, but summarization failed. Continuing without summary."
+        )
+
+
+def generate_response_by_gemma3(prompt, request_id):
     # Need to set up ollama first, then pull some models
     stream = ollama_client.generate(model="gemma3:4b", prompt=prompt, stream=True)
     for chunk in stream:
         buffers[request_id] += chunk["response"]  # Append response to buffer
 
 
-def generate_response_by_gemini(prompt, conversation_key, request_id):
+def generate_response_by_gemini(prompt, request_id):
     try:
         response_stream = model.generate_content(prompt, stream=True)
         for chunk in response_stream:
@@ -254,6 +268,9 @@ def handle_message(event, say, client: WebClient):
     conversation_key = f"{channel_id}-{user_id}"
 
     print(f">> {user_id} >>", user_message)
+
+    # Update last activity timestamp
+    last_activity[conversation_key] = time.time()
 
     # Initial response
     if channel_type == "im":
