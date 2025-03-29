@@ -1,6 +1,6 @@
 import marqo
 
-from common import BASE_NAME
+from util import BASE_NAME
 
 
 mq = marqo.Client()

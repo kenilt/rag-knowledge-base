@@ -11,7 +11,7 @@ import marqo
 from ollama import Client
 from slack_sdk import WebClient
 
-from common import BASE_NAME
+from util import BASE_NAME
 
 load_dotenv()
 
@@ -30,6 +30,7 @@ mq = marqo.Client()
 ollama_client = Client()
 
 # Constants
+TOP_K = 5
 INACTIVITY_TIMEOUT = 3600  # 1 hour in seconds
 INPUT_TOKEN_LIMIT = 50000
 SLACK_MESSAGE_LIMIT = 3000
@@ -150,7 +151,7 @@ def generate_ai_response(
 ):
     request_id = str(time.time())
 
-    context, paths = retrieve_context_and_paths(question)
+    context = retrieve_context_from_marqo(question)
     history: list = get_conversation_history(conversation_key)
 
     # Prepare prompt with retrieved context
@@ -173,6 +174,7 @@ def generate_ai_response(
     buffer_thread.join()  # Ensure the thread stops before moving forward
 
     if buffers[request_id]:
+        paths = retrieve_related_documents_from_marqo(question)
         message = format_message(buffers[request_id]) + f"\n\n*References:*\n{paths}"
         chunks = chunk_message(message)
         if len(chunks) >= 1:
@@ -190,22 +192,28 @@ def generate_ai_response(
     summarize_history_if_needed(history, conversation_key)
 
 
-def retrieve_context_and_paths(question):
+def retrieve_context_from_marqo(question):
     """Retrieve relevant documents and construct context and paths."""
-    results = mq.index(BASE_NAME).search(question, limit=10)
-    context = " ".join(
-        [
-            result["content"]
-            for result in results["hits"]
-            if result["file_type"] in ["txt", "pptx", "pdf", "docx"]
-        ][0:3]
+    results = mq.index(BASE_NAME).search(
+        question,
+        limit=TOP_K,
+        filter_string="file_type:(txt) OR file_type:(pptx) OR file_type:(pdf) OR file_type:(docx) OR file_type:(web)",
     )
-    paths = "\n".join(
+    context = " ".join([result["content"] for result in results["hits"]])
+    return context
+
+
+def retrieve_related_documents_from_marqo(question):
+    results = mq.index(BASE_NAME).search(question, limit=3 * TOP_K)
+    references = ", ".join(
         distinct_paths(
-            [f"<https://example.com|{result['title']}>" for result in results["hits"]]
+            [
+                f"<{result['url'] if result['url'] else 'https://example.com'}|{result['title']}>"
+                for result in results["hits"]
+            ]
         )
     )
-    return context, paths
+    return references
 
 
 def get_conversation_history(conversation_key):

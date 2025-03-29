@@ -2,7 +2,9 @@ import marqo
 from ollama import Client
 import readline
 
-from common import BASE_NAME
+from util import BASE_NAME
+
+TOP_K = 5
 
 mq = marqo.Client()
 ollama_client = Client()
@@ -11,6 +13,30 @@ ollama_client = Client()
 def distinct_paths(paths):
     seen = set()
     return [x for x in paths if x not in seen and not seen.add(x)]
+
+
+def retrieve_context_from_marqo(question):
+    """Retrieve relevant documents and construct context and paths."""
+    results = mq.index(BASE_NAME).search(
+        question,
+        limit=TOP_K,
+        filter_string="file_type:(txt) OR file_type:(pptx) OR file_type:(pdf) OR file_type:(docx) OR file_type:(web)",
+    )
+    context = " ".join([result["content"] for result in results["hits"]])
+    return context
+
+
+def retrieve_related_documents_from_marqo(question):
+    results = mq.index(BASE_NAME).search(question, limit=3 * TOP_K)
+    references = ", ".join(
+        distinct_paths(
+            [
+                f"<{result['url'] if result['url'] else 'https://example.com'}|{result['title']}>"
+                for result in results["hits"]
+            ]
+        )
+    )
+    return references
 
 
 while True:
@@ -22,19 +48,11 @@ while True:
     results = mq.index(BASE_NAME).search(prompt, limit=10)
 
     # Construct context from retrieved documents
-    context = " ".join(
-        [
-            result["content"]
-            for result in results["hits"]
-            if (result["file_type"] in ["txt", "pptx", "pdf", "docx"])
-        ][0:3]
-    )
-    paths = "\n".join(
-        distinct_paths([result["file_path"] for result in results["hits"]])
-    )
+    context = retrieve_context_from_marqo(prompt)
+    paths = retrieve_related_documents_from_marqo(prompt)
 
     # Prepare prompt for Gemma 3 4B
-    prompt = f"Context: {context}\n\nQuestion: {prompt}"
+    prompt = f"Retrieved Context: {context}\n\nQuestion: {prompt}"
     print(prompt)
 
     print("\n")

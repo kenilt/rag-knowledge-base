@@ -1,7 +1,7 @@
 import marqo
 from ollama import Client
 
-from common import BASE_NAME
+from util import BASE_NAME
 
 mq = marqo.Client()
 ollama_client = Client()
