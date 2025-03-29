@@ -13,20 +13,35 @@ from pptx import Presentation
 from common import BASE_NAME
 
 
-def chunk_text(text, chunk_size=300, overlap=50):
+def chunk_text(text, target_chunk_size=1000):
     """
-    Splits a text into chunks of chunk_size words with overlap.
+    Splits a text into chunks by paragraphs, ensuring each chunk has around target_chunk_size words.
 
     :param text: The full document text
-    :param chunk_size: Number of words per chunk
-    :param overlap: Number of overlapping words between chunks
+    :param target_chunk_size: Approximate number of words per chunk
     :return: List of text chunks
     """
-    words = text.split()
+    paragraphs = text.split("\n")  # Split text into paragraphs
     chunks = []
-    for i in range(0, len(words), chunk_size - overlap):
-        chunk = " ".join(words[i : i + chunk_size])
-        chunks.append(chunk)
+    current_chunk = []
+    current_word_count = 0
+
+    for paragraph in paragraphs:
+        paragraph_word_count = len(paragraph.split())
+        if current_word_count + paragraph_word_count <= target_chunk_size:
+            current_chunk.append(paragraph)
+            current_word_count += paragraph_word_count
+        else:
+            # Add the current chunk to the list and start a new chunk
+            if current_chunk:
+                chunks.append("\n".join(current_chunk))
+            current_chunk = [paragraph]
+            current_word_count = paragraph_word_count
+
+    # Add the last chunk if it exists
+    if current_chunk:
+        chunks.append("\n".join(current_chunk))
+
     return chunks
 
 
