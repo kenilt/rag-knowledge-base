@@ -22,15 +22,33 @@ def chunk_text(text, target_chunk_size=1000, overlap_size=100):
         else:
             # Add the current chunk to the list and start a new chunk
             if current_chunk:
-                chunks.append("\n".join(current_chunk))
+                chunks.append("\n".join(current_chunk).strip())
 
-            overlap_words = " ".join(current_chunk).split()[-overlap_size:]
-            current_chunk = [" ".join(overlap_words), paragraph]
-            current_word_count = len(overlap_words) + paragraph_word_count
+            # Handle overlap with multiple paragraphs
+            overlap_paragraphs = []
+            overlap_word_count = 0
+            for prev_paragraph in reversed(current_chunk):
+                prev_paragraph_word_count = len(prev_paragraph.split())
+                if overlap_word_count + prev_paragraph_word_count > overlap_size:
+                    # Cut the last paragraph if it exceeds overlap_size
+                    if overlap_word_count == 0:
+                        remaining_words = overlap_size - overlap_word_count
+                        if remaining_words > 0:
+                            truncated_paragraph = " ".join(
+                                prev_paragraph.split()[-remaining_words:]
+                            )
+                            overlap_paragraphs.insert(0, truncated_paragraph)
+                    break
+                overlap_paragraphs.insert(0, prev_paragraph)
+                overlap_word_count += prev_paragraph_word_count
+
+            # Start a new chunk with the overlap and the current paragraph
+            current_chunk = overlap_paragraphs + [paragraph]
+            current_word_count = overlap_word_count + paragraph_word_count
 
     # Add the last chunk if it exists
     if current_chunk:
-        chunks.append("\n".join(current_chunk))
+        chunks.append("\n".join(current_chunk).strip())
 
     return chunks
 

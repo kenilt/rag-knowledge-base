@@ -13,7 +13,6 @@ def index_content_to_marqo(title, content, file_type, url):
     for i, chunk in enumerate(chunks):
         item = build_dict_item(title, chunk, file_type, url, i)
         documents.append(item)
-        print(item)  # temp
 
     # # Delete old chunk based on file_path if needed
     # existing_chunks = mq.index(BASE_NAME).search(
@@ -57,9 +56,9 @@ def batch_index_documents(documents, batch_size=128):
             batch, tensor_fields=["content", "title"]
         )
         if result["errors"]:
-            print_error(result)
             print(documents)
-            raise Exception("Add document failed")
+            print_error(result)
+            # raise Exception("Add document failed")
         if len(documents) // batch_size > 0:
             print(
                 f"Indexed batch {i//batch_size + 1}/{(len(documents) // batch_size) + 1} with {len(batch)} items"

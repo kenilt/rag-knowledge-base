@@ -61,3 +61,10 @@ mq = marqo.Client()
 # query = "What is DooDoo?"
 # answer = rag_query(query)
 # print("===> Answer:", answer)
+
+# existing_chunks = mq.index("doodoo_base").search(
+#     "", filter_string=f"file_type:(png)", limit=100
+# )
+# if existing_chunks["hits"]:
+#     for item in existing_chunks["hits"]:
+#         print(item["title"], item["chunk_name"], item["content"])

@@ -197,7 +197,7 @@ def retrieve_context_from_marqo(question):
     results = mq.index(BASE_NAME).search(
         question,
         limit=TOP_K,
-        filter_string="file_type:(txt) OR file_type:(pptx) OR file_type:(pdf) OR file_type:(docx) OR file_type:(web)",
+        # filter_string="file_type:(txt) OR file_type:(pptx) OR file_type:(pdf) OR file_type:(docx) OR file_type:(web)",
     )
     context = " ".join([result["content"] for result in results["hits"]])
     return context
@@ -207,13 +207,18 @@ def retrieve_related_documents_from_marqo(question):
     results = mq.index(BASE_NAME).search(question, limit=3 * TOP_K)
     references = ", ".join(
         distinct_paths(
-            [
-                f"<{result['url'] if result['url'] else 'https://example.com'}|{result['title']}>"
-                for result in results["hits"]
-            ]
+            [f"<{get_hit_url(result)}|{result['title']}>" for result in results["hits"]]
         )
     )
     return references
+
+
+def get_hit_url(result):
+    url = result["url"]
+    if url and url.startswith("http"):
+        return url
+    else:
+        return "http://localhost"  # Default URL if not provided
 
 
 def get_conversation_history(conversation_key):
