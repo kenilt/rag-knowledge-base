@@ -83,6 +83,17 @@ def is_reach_token_limit(history):
     return False
 
 
+def last_user_question(history):
+    if not history:
+        return None
+
+    for message in reversed(history):
+        if message.get("role") == "User":
+            return message.get("text")
+
+    return None
+
+
 def build_prompt(history, context, current_message):
     prompt = "Conversation History:\n"
     for message in history:
@@ -151,12 +162,16 @@ def generate_ai_response(
 ):
     request_id = str(time.time())
 
-    context = retrieve_context_from_marqo(question)
     history: list = get_conversation_history(conversation_key)
+    # Enhance the question for RAG
+    enhanced_question = enhanced_question_for_rag(history, question)
+    print("Enhanced Question for RAG:", enhanced_question)
+
+    context = retrieve_context_from_marqo(enhanced_question)
 
     # Prepare prompt with retrieved context
     prompt = build_prompt(history, context, question)
-    print(prompt)
+    # print(prompt)
 
     buffers[request_id] = ""  # Create buffer for this request
     stop_flags[request_id] = False  # Control flag for stopping thread
@@ -197,9 +212,14 @@ def retrieve_context_from_marqo(question):
     results = mq.index(BASE_NAME).search(
         question,
         limit=TOP_K,
-        # filter_string="file_type:(txt) OR file_type:(pptx) OR file_type:(pdf) OR file_type:(docx) OR file_type:(web)",
+        filter_string="file_type:(txt) OR file_type:(pptx) OR file_type:(pdf) OR file_type:(docx) OR file_type:(xlsx) OR file_type:(web)",
     )
-    context = " ".join([result["content"] for result in results["hits"]])
+    context = "\n".join(
+        [
+            f"**File: [{result["title"]}]({get_hit_url(result)})**\n{result["content"]}\n"
+            for result in results["hits"]
+        ]
+    )
     return context
 
 
@@ -252,6 +272,45 @@ def summarize_history_if_needed(history, conversation_key):
         print(
             "Token limit reached, but summarization failed. Continuing without summary."
         )
+
+
+def detect_greeting_input(prompt):
+    model = "gemma3:1b"  # Use this model for fast speed
+    system_prompt = """You are an intelligent assistant designed to classify user queries. Your task is to determine whether the input is greeting message or not.
+
+Rules:
+1. If the input is a **greeting** message, return **"Yes"** (e.g., "Hello", "How are you?", "Good morning").
+2. If the input is **not** a **greeting** message, return **"No"**.
+3. Respond **only** with either "Yes" or "No" and nothing else.
+"""
+
+    response = ollama_client.chat(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt},
+        ],
+    )
+    return response["message"]["content"].strip(".") == "Yes"
+
+
+def enhanced_question_for_rag(history, user_input):
+    if not history:
+        return user_input
+    prompt = "Conversation History:\n"
+    for message in history:
+        prompt += f"{message['role']}: {message['text']}\n"
+
+    prompt += (
+        """
+Question: Based on the conversation history, enhance the user input below to provide clearer context for the RAG system, especially regarding the product name.
+Rules: The output should be same language with user input. The output should contain only the refined question, nothing else.
+User input: """
+        + user_input
+    )
+    model = "gemma3:1b"  # Use this model for fast speed
+    response = ollama_client.generate(model=model, prompt=prompt)
+    return response["response"]
 
 
 def generate_response_by_gemma3(prompt, request_id):
