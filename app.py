@@ -31,6 +31,8 @@ ollama_client = Client()
 
 # Constants
 TOP_K = 5
+CONVERSATION_HISTORY_LIMIT = 10
+REFINE_INPUT_HISTORY_LIMIT = 3
 INACTIVITY_TIMEOUT = 3600  # 1 hour in seconds
 INPUT_TOKEN_LIMIT = 50000
 SLACK_MESSAGE_LIMIT = 3000
@@ -233,6 +235,20 @@ def retrieve_related_documents_from_marqo(question):
     return references
 
 
+def retrieve_related_images_from_marqo(question):
+    results = mq.index(BASE_NAME).search(
+        question,
+        limit=5 * TOP_K,
+        filter_string="file_type:(png) OR file_type:(jpg) OR file_type:(jpeg)",
+    )
+    references = ", ".join(
+        distinct_paths(
+            [f"<{get_hit_url(result)}|{result['title']}>" for result in results["hits"]]
+        )
+    )
+    return references
+
+
 def get_hit_url(result):
     url = result["url"]
     if url and url.startswith("http"):
@@ -248,12 +264,25 @@ def get_conversation_history(conversation_key):
     return conversation_histories[conversation_key]
 
 
+def clear_history(conversation_key):
+    if conversation_key in conversation_histories:
+        del conversation_histories[conversation_key]
+        print(f"Chat history cleared for {conversation_key}.")
+
+
 def track_converstion_history(history: list, question, answer):
     history.append({"role": "User", "text": question})
     history.append({"role": "Bot", "text": answer})
     # Basic token management (limit to last 10 messages)
-    if len(history) > 20:
-        history = history[-20:]
+    limit = 2 * CONVERSATION_HISTORY_LIMIT
+    if len(history) > limit:
+        history = history[-limit:]
+
+
+def truncate_message(message, length=1000):
+    if len(message) > length:
+        return message[:length] + "..."
+    return message
 
 
 def summarize_history_if_needed(history, conversation_key):
@@ -298,8 +327,9 @@ def enhanced_question_for_rag(history, user_input):
     if not history:
         return user_input
     prompt = "Conversation History:\n"
-    for message in history:
-        prompt += f"{message['role']}: {message['text']}\n"
+    # Only based on last 3 QnA
+    for message in history[-2 * REFINE_INPUT_HISTORY_LIMIT :]:
+        prompt += f"{message['role']}: {truncate_message(message['text'])}\n"
 
     prompt += (
         """
@@ -332,7 +362,17 @@ def generate_response_by_gemini(prompt, request_id):
 
 @app.event("message")
 def handle_message(event, say, client: WebClient):
-    user_message = event["text"]
+    def update_response_func(message):
+        client.chat_update(
+            channel=event["channel"],
+            ts=bot_message_ts,  # Update the bot's previous message
+            text=message,
+        )
+
+    def trailing_response_func(message):
+        client.chat_postMessage(channel=event["channel"], text=message)
+
+    user_message: str = event["text"]
     thread_ts = event.get("thread_ts") or event["ts"]
     channel_type = event.get("channel_type")
     channel_id = event["channel"]
@@ -352,19 +392,23 @@ def handle_message(event, say, client: WebClient):
 
     bot_message_ts = initial_response["ts"]  # Get the message timestamp
 
-    def update_response_func(message):
-        client.chat_update(
-            channel=event["channel"],
-            ts=bot_message_ts,  # Update the bot's previous message
-            text=message,
+    # Handle custom actions
+    lower_message = user_message.strip().lower()
+    if lower_message.startswith("new question:"):
+        clear_history(conversation_key)
+        user_message = user_message[len("new question:") :].strip()
+        generate_ai_response(
+            user_message, conversation_key, update_response_func, trailing_response_func
         )
-
-    def trailing_response_func(message):
-        client.chat_postMessage(channel=event["channel"], text=message)
-
-    generate_ai_response(
-        user_message, conversation_key, update_response_func, trailing_response_func
-    )
+    elif lower_message.startswith("search image:"):
+        user_message = user_message[len("search image:") :].strip()
+        paths = retrieve_related_images_from_marqo(user_message)
+        answer = f"*Related images:*\n{paths}"
+        update_response_func(answer)
+    else:
+        generate_ai_response(
+            user_message, conversation_key, update_response_func, trailing_response_func
+        )
 
 
 if __name__ == "__main__":
