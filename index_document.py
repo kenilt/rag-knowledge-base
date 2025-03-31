@@ -62,9 +62,12 @@ mq = marqo.Client()
 # answer = rag_query(query)
 # print("===> Answer:", answer)
 
-# existing_chunks = mq.index("doodoo_base").search(
-#     "", filter_string=f"file_type:(png)", limit=100
-# )
-# if existing_chunks["hits"]:
-#     for item in existing_chunks["hits"]:
-#         print(item["title"], item["chunk_name"], item["content"])
+existing_chunks = mq.index("doodoo_base").search(
+    "", filter_string=f"title:(Doodoo Mastersheet.xlsx)", limit=100
+)
+if existing_chunks["hits"]:
+    for item in existing_chunks["hits"]:
+        # print(item["title"], item["chunk_name"], item["content"])
+        print(item)
+        # del_result = mq.index("doodoo_base").delete_documents([item["_id"]])
+        # print(del_result)

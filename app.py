@@ -11,6 +11,7 @@ import marqo
 from ollama import Client
 from slack_sdk import WebClient
 
+from database import add_conversation
 from util import BASE_NAME
 
 load_dotenv()
@@ -201,6 +202,10 @@ def generate_ai_response(
         print(message)
 
     track_converstion_history(history, question, buffers[request_id])
+    user_id = conversation_key.split("-")[-1]
+    add_conversation(
+        request_id, user_id, question, enhanced_question, buffers[request_id]
+    )
 
     # Clean up the request from the dictionary
     del buffers[request_id]
