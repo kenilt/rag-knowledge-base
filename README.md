@@ -10,6 +10,54 @@ This project implements a Slack bot that uses Retrieval-Augmented Generation (RA
 - **Streaming Responses**: Streams AI-generated responses in real-time.
 - **Reference Links**: Provides references to the documents used for generating answers.
 
+## App flow
+
+### RAG diagrams
+![image](https://github.com/user-attachments/assets/69d0eb61-2585-44e7-a8f2-1e6a84a612a6)
+
+### Slack app flow
+```
++-------------------+
+| User sends a      |
+| message in Slack  |
++-------------------+
+          |
+          v
++-------------------+       +-------------------+
+| Enhanced question | ----> | Retrieve context  |
+| input using       | <---- | from Marqo        |
+| Gemini or Gemma3  |       +-------------------+
++-------------------+
+          |
+          v
++-------------------+
+| Build prompt with |
+| conversation      | 
+| history and       |
+| context           |
++-------------------+
+          |
+          v
++-------------------+
+| Generate response |
+| using Gemini or   |
+| Gemma3            |
++-------------------+
+          |
+          v
++-------------------+       +-------------------+
+| Stream response   | ----> | Update Slack      |
+| chunks to Slack   |       | messages          |
++-------------------+       +-------------------+
+          |
+          v
++-------------------+       +-------------------+
+| Track conversation| ----> | Summarize history |
+| history           |       | if token limit    |
++-------------------+       | is reached        |
+                            +-------------------+
+```
+
 ## Prerequisites
 
 1. **Python**: Ensure Python 3.8+ is installed.
