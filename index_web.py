@@ -93,7 +93,8 @@ def crawl_website(start_url, max_pages=50):
         title, page_content, new_links = process_page(start_url, url)
         to_visit.update(new_links - visited_urls)  # Avoid revisiting links
 
-        index_content_to_marqo(title, page_content, "web", url)
+        if title and page_content:
+            index_content_to_marqo(title, page_content, "web", url)
 
         time.sleep(2)  # Be polite, don't overload the server
 

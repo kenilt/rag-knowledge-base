@@ -223,7 +223,7 @@ def retrieve_context_from_marqo(question):
     )
     context = "\n".join(
         [
-            f"**File: [{result["title"]}]({get_hit_url(result)})**\n{result["content"]}\n"
+            f"**File: [{result['title']}]({get_hit_url(result)})**\n{result['content']}\n"
             for result in results["hits"]
         ]
     )

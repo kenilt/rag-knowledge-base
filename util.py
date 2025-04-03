@@ -1,4 +1,4 @@
-BASE_NAME = "doodoo_base"
+BASE_NAME = "brand_base"
 
 
 def chunk_text(text, target_chunk_size=1000, overlap_size=100):
